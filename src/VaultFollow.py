@@ -1,9 +1,14 @@
-from profitview import Link, http, logger, cron
+from profitview import Link, logger, cron
 import requests
 
 
 class Signals(Link):
-    """A ProfitView bot that copies trading strategies based on DeFiChain vault data."""
+    """A ProfitView signal bot that follows the largest DeFiChain vault owners.
+
+    Every hour it rebuilds the list of vaults to follow; every minute it turns
+    those vaults' collateral ratios into a position signal for each asset's
+    BitMEX perpetual.
+    """
 
     exchange = "bitmex"  # Example exchange
     assets = [  # Liquid perps on BitMEX
@@ -30,6 +35,7 @@ class Signals(Link):
     asset_to_perp = {asset['asset']: asset['perp'] for asset in assets}
 
     vaults_url = "https://ocean.defichain.com/v0/mainnet/loans/vaults"
+    request_timeout = 10  # Seconds per HTTP request
 
     top_owner_number = 10
 
@@ -42,29 +48,29 @@ class Signals(Link):
 
     @cron.run(every=3600)  # Refresh vaults to follow every hour
     def refresh_vault_data(self):
-        # Clear existing data
-        self.active_vaults = []
-        self.vaults_by_asset = {}
-        self.vaults_by_owner = {}
-        self.vaults_by_owner_collateral = []
-        self.top_vaults_by_asset = {}
-        self.weighted_collateral_for_asset = {}
+        logger.info("Re-computing vault data")
 
-        logger.info(("Re-computing Vault data"))
+        active_vaults = self.get_active_vaults()
+        if active_vaults is None:
+            logger.warning("Vault refresh failed; keeping the previous vault data")
+            return
 
-        self.get_active_vaults()
-        self.process_vaults()
+        self.process_vaults(active_vaults)
 
     def get_active_vaults(self):
-        """Fetch and analyze active vaults with loans and collateral"""
-        params = {"size": 100}  # Fetch 100 vaults per request
+        """Fetch all vaults page by page; return those with loans and collateral, or None if a request fails"""
+        params = {"size": 100}  # Requested page size; the API may return fewer
         all_vaults = []
 
         while True:
-            response = requests.get(self.vaults_url, params=params)
+            try:
+                response = requests.get(self.vaults_url, params=params, timeout=self.request_timeout)
+            except requests.RequestException as e:
+                logger.warning(f"Failed to fetch vault data: {e}")
+                return None
 
             if response.status_code != 200:
-                logger.info(f"Failed to fetch vault data: {response.status_code}, {response.text}")
+                logger.warning(f"Failed to fetch vault data: {response.status_code}, {response.text}")
                 return None
 
             data = response.json()
@@ -79,19 +85,24 @@ class Signals(Link):
         logger.info(f"Total vaults: {len(all_vaults)}")
 
         # Filter active vaults with loans and collateral
-        self.active_vaults = [
+        return [
             vault for vault in all_vaults
             if float(vault.get("loanValue", 0)) > 0 and float(vault.get("collateralValue", 0)) > 0
         ]
 
-    def process_vaults(self):
+    def process_vaults(self, active_vaults):
+        # The per-minute signal task runs in another thread, so build everything
+        # locally and only replace the bot's data once it is complete
+        vaults_by_asset = {}
+        vaults_by_owner = {}
+
         # Process vaults for all assets in the assets list
         for asset in self.assets:
             asset_symbol = asset['asset']
-            asset_vaults = self.get_vaults_by_asset(asset_symbol, self.active_vaults)
+            asset_vaults = self.get_vaults_by_asset(asset_symbol, active_vaults)
 
             # Store the results in the dictionary
-            self.vaults_by_asset[asset_symbol] = []
+            vaults_by_asset[asset_symbol] = []
 
             for vault in asset_vaults:
                 # Extract the specific collateral amount for this asset
@@ -111,44 +122,44 @@ class Signals(Link):
                 }
 
                 # Add to the asset's vault list
-                self.vaults_by_asset[asset_symbol].append(vault_data)
+                vaults_by_asset[asset_symbol].append(vault_data)
 
-                # Update owner's total collateral
-                owner = vault['ownerAddress']
-                if owner not in self.vaults_by_owner:
-                    self.vaults_by_owner[owner] = {
-                        'totalCollateralValue': float(vault['collateralValue']),  # Initialize with this vault's value
-                        'vaults': [vault_data]
-                    }
-                else:
-                    # Only add the vault data, don't add to total collateral value
-                    # since it's already the total value for the vault
-                    self.vaults_by_owner[owner]['vaults'].append(vault_data)
+                # Update owner's total collateral. A vault holding several listed
+                # assets is seen once per asset, so count each vault only once.
+                owner_info = vaults_by_owner.setdefault(
+                    vault['ownerAddress'], {'totalCollateralValue': 0.0, 'vaults': []}
+                )
+                if all(v['vaultId'] != vault['vaultId'] for v in owner_info['vaults']):
+                    owner_info['vaults'].append(vault_data)
+                    owner_info['totalCollateralValue'] += vault_data['collateralValue']
 
         # Sort owners by total collateral value in descending order
-        self.vaults_by_owner_collateral = sorted(
-            self.vaults_by_owner.items(),
+        vaults_by_owner_collateral = sorted(
+            vaults_by_owner.items(),
             key=lambda x: x[1]['totalCollateralValue'],
             reverse=True
         )
 
-        top_owners = self.vaults_by_owner_collateral[:self.top_owner_number]
+        top_owners = vaults_by_owner_collateral[:self.top_owner_number]
 
-        # Create a set to store unique vault IDs from top owners
-        top_vaults = set()
-
-        # Iterate through top owners and collect their vaults
-        for owner, vault_info in top_owners:
-            for vault in vault_info['vaults']:
-                top_vaults.add(vault['vaultId'])
-
-        # Iterate through top owners and organize vaults by collateral asset
+        # Organize the top owners' vaults by the tradable assets they hold as collateral
+        top_vaults_by_asset = {}
         for owner, vault_info in top_owners:
             for vault in vault_info['vaults']:
                 for symbol in vault['symbols']:
-                    if symbol not in self.top_vaults_by_asset:
-                        self.top_vaults_by_asset[symbol] = set()
-                    self.top_vaults_by_asset[symbol].add(vault['vaultId'])
+                    if symbol in self.asset_to_perp:
+                        top_vaults_by_asset.setdefault(symbol, set()).add(vault['vaultId'])
+
+        logger.info(
+            f"Following {len(top_owners)} owners: "
+            + ", ".join(f"{symbol} {len(vault_ids)} vaults" for symbol, vault_ids in top_vaults_by_asset.items())
+        )
+
+        self.active_vaults = active_vaults
+        self.vaults_by_asset = vaults_by_asset
+        self.vaults_by_owner = vaults_by_owner
+        self.vaults_by_owner_collateral = vaults_by_owner_collateral
+        self.top_vaults_by_asset = top_vaults_by_asset
 
     def get_vaults_by_asset(self, asset_symbol, vaults):
         return sorted(
@@ -158,32 +169,47 @@ class Signals(Link):
         )
 
     def get_current_vault_details(self, vault_id):
+        """Return the vault's current details, or None if they can't be fetched (for example, the vault was closed)"""
         url = f"{self.vaults_url}/{vault_id}"
-        response = requests.get(url)
+        try:
+            response = requests.get(url, timeout=self.request_timeout)
+        except requests.RequestException as e:
+            logger.warning(f"Failed to fetch vault {vault_id}: {e}")
+            return None
+
+        if response.status_code != 200:
+            logger.warning(f"Failed to fetch vault {vault_id}: {response.status_code}")
+            return None
+
         return response.json()['data']
 
     def get_weighted_collateral(self):
-        self.weighted_collateral_for_asset = {}
+        weighted_collateral_for_asset = {}
         for asset, vault_ids in self.top_vaults_by_asset.items():
             total_collateral_for_asset = 0
             total_collateral_for_asset_ratio = 0
             for vault_id in vault_ids:
                 vault_details = self.get_current_vault_details(vault_id)
-                collateral_ratio = float(vault_details['collateralRatio'])
+                if vault_details is None:
+                    continue
+                collateral_ratio = float(vault_details.get('collateralRatio', -1))
+                if collateral_ratio <= 0:  # The API reports -1 when it has no usable ratio for the vault
+                    continue
                 total_collateral = float(vault_details['collateralValue'])
                 total_collateral_for_asset += total_collateral
                 total_collateral_for_asset_ratio += collateral_ratio*total_collateral
-            self.weighted_collateral_for_asset[asset] = total_collateral_for_asset_ratio/total_collateral_for_asset
+            if total_collateral_for_asset > 0:
+                weighted_collateral_for_asset[asset] = total_collateral_for_asset_ratio/total_collateral_for_asset
+        self.weighted_collateral_for_asset = weighted_collateral_for_asset
 
     @cron.run(every=60)
     def fetch_vault_data(self):
-        """Fetches vault data from the DeFiChain API."""
+        """Fetches the followed vaults' current collateral ratios and signals each asset's perp."""
         self.get_weighted_collateral()
         for asset, collateral_ratio in self.weighted_collateral_for_asset.items():
-            if asset in self.asset_to_perp:
-                self.decide_signal(self.exchange, asset, collateral_ratio)
+            self.decide_signal(asset, collateral_ratio)
 
-    def decide_signal(self, src, asset, collateral_ratio):
+    def decide_signal(self, asset, collateral_ratio):
         """Makes trading decisions based on the collateral ratio."""
         if collateral_ratio < 150:  # Risk of liquidation
             size = -1.0  # Go fully short
