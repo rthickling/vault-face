@@ -1,6 +1,6 @@
 # Vault-Face: DeFiChain Vault-Following Signal Bot for ProfitView
 
-A [ProfitView](https://profitview.net) signal bot that reads public lending-vault data from the DeFiChain blockchain, follows the vaults of the largest owners, and turns their collateral ratios into position signals for BitMEX perpetual futures. I built it in January 2025, partly to try AI-assisted development with DeepSeek in Cursor.
+A [ProfitView](https://profitview.net) signal bot that reads public lending-vault data from the DeFiChain blockchain, follows the vaults of the largest owners, and turns their collateral ratios into position signals for perpetual futures on [WOO X](https://woox.io). I built it in January 2025, partly to try AI-assisted development with DeepSeek in Cursor.
 
 **Status:** experimental. The signal has not been backtested and has no performance record, so I make no claim that it is profitable.
 
@@ -10,7 +10,7 @@ DeFiChain's lending vaults are public: anyone can read each vault's collateral, 
 
 The bot treats the largest vault owners as potential "smart money" and reads their collateral ratios as a sentiment signal:
 
-1. Every hour, fetch every vault, keep those with both loans and collateral, and keep the ones whose collateral includes an asset that has a BitMEX perpetual.
+1. Every hour, fetch every vault, keep those with both loans and collateral, and keep the ones whose collateral includes an asset that has a WOO X perpetual.
 2. Rank owners by the total collateral across their vaults, and follow the top 10.
 3. Every minute, fetch the followed vaults' current collateral ratios and average them for each asset, weighted by collateral value.
 4. Map the average to a position between -1 (fully short) and +1 (fully long), and send it to ProfitView with `self.signal(...)`.
@@ -21,7 +21,7 @@ The bot treats the largest vault owners as potential "smart money" and reads the
 | 150% to 200% | Linear from -1 to +1, neutral at 175% |
 | Above 200%: vaults comfortably collateralised | +1 (fully long) |
 
-ProfitView turns the position into BitMEX orders, within the position limit set for the bot. In practice only BTC and ETH are both DeFiChain collateral and BitMEX perpetuals, so the bot trades XBTUSD and ETHUSD.
+ProfitView turns the position into WOO X orders, within the position limit set for the bot. In practice only BTC and ETH are both DeFiChain collateral and WOO X perpetuals, so the bot trades WOO X's USDT-margined `PERP_BTC_USDT` and `PERP_ETH_USDT`.
 
 ```mermaid
 flowchart TD
@@ -30,7 +30,7 @@ flowchart TD
     Followed --> Minute["Every minute: collateral-weighted ratio"]
     Ocean -->|"current ratio per vault"| Minute
     Minute -->|"position from -1 to +1"| PV["ProfitView Position bot"]
-    PV --> BitMEX["BitMEX XBTUSD and ETHUSD"]
+    PV --> WOOX["WOO X PERP_BTC_USDT and PERP_ETH_USDT"]
 ```
 
 ## Repository contents
@@ -54,7 +54,7 @@ Fetching every vault takes about 80 seconds, because the API returns 30 vaults p
 **Bot.** The bot runs inside ProfitView, which provides the `profitview` module:
 
 1. Open ProfitView's Signals IDE and create a file containing [`src/VaultFollow.py`](src/VaultFollow.py). The runtime loads its `Signals` class.
-2. Set it up as a Position bot for XBTUSD and ETHUSD on BitMEX, with `max_position_size` set. A signal of +1 means a long position of that size, and -1 a short position of that size.
+2. Set it up as a Position bot for `PERP_BTC_USDT` and `PERP_ETH_USDT` on WOO X, with `max_position_size` set. A signal of +1 means a long position of that size, and -1 a short position of that size.
 
 **Tests.** They run offline, replacing the `profitview` module and the DeFiChain API with small fakes:
 
@@ -127,8 +127,8 @@ The most useful thing the assistant did was find a problem I hadn't noticed, rat
 
 ## History
 
-- **January 2025:** built and deployed through ProfitView to BitMEX's Bot Creator beta, as a [BTC bot](https://www.bitmex.com/app/trade/XBTUSD?botId=58a12c25-5f3c-4908-bd4f-eb3f0ccdcad5&action=share) and an [ETH bot](https://www.bitmex.com/app/trade/ETHUSD?botId=3023d6ed-f9bf-4b6a-a664-699ae85cfb0a&action=share). Viewing them requires access to the beta.
-- **October 2026:** revisited the code. I fixed an indentation error that stopped the published file from compiling, ranked owners by their total collateral rather than their first vault, made the hourly refresh and the HTTP error handling robust (see [Design notes](#design-notes)), and added tests and CI.
+- **January 2025:** built and deployed through ProfitView to BitMEX's Bot Creator beta, as one bot for BTC and one for ETH. They ran there until BitMEX closed on 23 September 2026.
+- **October 2026:** revisited the code. I fixed an indentation error that stopped the published file from compiling, ranked owners by their total collateral rather than their first vault, made the hourly refresh and the HTTP error handling robust (see [Design notes](#design-notes)), and added tests and CI. With BitMEX closed, I also switched the code from BitMEX to WOO X, which ProfitView supports.
 
 ## License
 

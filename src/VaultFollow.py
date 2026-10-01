@@ -7,30 +7,28 @@ class Signals(Link):
 
     Every hour it rebuilds the list of vaults to follow; every minute it turns
     those vaults' collateral ratios into a position signal for each asset's
-    BitMEX perpetual.
+    WOO X perpetual.
     """
 
-    exchange = "bitmex"  # Example exchange
-    assets = [  # Liquid perps on BitMEX
-        { "asset": "BTC", "perp": "XBTUSD" },
-        { "asset": "ETH", "perp": "ETHUSD" },
-        { "asset": "XRP", "perp": "XRPUSD" },
-        { "asset": "SOL", "perp": "SOLUSD" },
-        { "asset": "SUI", "perp": "SUIUSD" },
-        { "asset": "DOGE", "perp": "DOGEUSDT" },
-        { "asset": "LTC", "perp": "LTCUSD" },
-        { "asset": "ADA", "perp": "ADAUSD" },
-        { "asset": "LINK", "perp": "LINKUSD" },
-        { "asset": "PEPE", "perp": "PEPEUSD" },
-        { "asset": "DOT", "perp": "DOTUSD" },
-        { "asset": "BNB", "perp": "BNBUSD" },
-        { "asset": "BCH", "perp": "BCHUSD" },
-        { "asset": "AVAX", "perp": "AVAXUSD" },
-        { "asset": "NEAR", "perp": "NEARUSD" },
-        { "asset": "WLD", "perp": "WLDUSD" },
-        { "asset": "APT", "perp": "APTUSD" },
-        { "asset": "FIL", "perp": "FILUSD" },
-        { "asset": "ARB", "perp": "ARBUSD" }
+    exchange = "woo"  # ProfitView's name for WOO X
+    assets = [  # USDT-margined perps on WOO X
+        { "asset": "BTC", "perp": "PERP_BTC_USDT" },
+        { "asset": "ETH", "perp": "PERP_ETH_USDT" },
+        { "asset": "XRP", "perp": "PERP_XRP_USDT" },
+        { "asset": "SOL", "perp": "PERP_SOL_USDT" },
+        { "asset": "SUI", "perp": "PERP_SUI_USDT" },
+        { "asset": "DOGE", "perp": "PERP_DOGE_USDT" },
+        { "asset": "LTC", "perp": "PERP_LTC_USDT" },
+        { "asset": "ADA", "perp": "PERP_ADA_USDT" },
+        { "asset": "LINK", "perp": "PERP_LINK_USDT" },
+        { "asset": "DOT", "perp": "PERP_DOT_USDT" },
+        { "asset": "BNB", "perp": "PERP_BNB_USDT" },
+        { "asset": "BCH", "perp": "PERP_BCH_USDT" },
+        { "asset": "AVAX", "perp": "PERP_AVAX_USDT" },
+        { "asset": "NEAR", "perp": "PERP_NEAR_USDT" },
+        { "asset": "APT", "perp": "PERP_APT_USDT" },
+        { "asset": "FIL", "perp": "PERP_FIL_USDT" },
+        { "asset": "ARB", "perp": "PERP_ARB_USDT" }
     ]
     asset_to_perp = {asset['asset']: asset['perp'] for asset in assets}
 

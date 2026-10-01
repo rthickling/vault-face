@@ -70,7 +70,7 @@ def test_signal_size_follows_collateral_ratio(bot, ratio, size):
     bot.decide_signal("BTC", ratio)
 
     [(src, sym, kwargs)] = bot.signals
-    assert (src, sym) == ("bitmex", "XBTUSD")
+    assert (src, sym) == ("woo", "PERP_BTC_USDT")
     assert kwargs["size"] == pytest.approx(size)
 
 
@@ -149,7 +149,7 @@ def test_signal_is_collateral_weighted_and_skips_unusable_vaults(bot, api):
     # (160 * 300 + 200 * 100) / (300 + 100) = 170
     assert bot.weighted_collateral_for_asset == {"BTC": pytest.approx(170)}
     [(src, sym, kwargs)] = bot.signals
-    assert (src, sym) == ("bitmex", "XBTUSD")
+    assert (src, sym) == ("woo", "PERP_BTC_USDT")
     assert kwargs["size"] == pytest.approx(-0.2)
 
 
