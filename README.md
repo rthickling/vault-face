@@ -1,4 +1,4 @@
-# vault-face: DeFiChain Vault-Following Signal Bot for ProfitView and BitMEX
+# Vault-Face: DeFiChain Vault-Following Signal Bot for ProfitView
 
 A [ProfitView](https://profitview.net) signal bot that reads public lending-vault data from the DeFiChain blockchain, follows the vaults of the largest owners, and turns their collateral ratios into position signals for BitMEX perpetual futures. I built it in January 2025, partly to try AI-assisted development with DeepSeek in Cursor.
 
