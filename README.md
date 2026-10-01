@@ -24,7 +24,7 @@ The bot treats the largest vault owners as potential "smart money" and reads the
 ProfitView turns the position into BitMEX orders, within the position limit set for the bot. In practice only BTC and ETH are both DeFiChain collateral and BitMEX perpetuals, so the bot trades XBTUSD and ETHUSD.
 
 ```mermaid
-flowchart LR
+flowchart TD
     Ocean["DeFiChain Ocean API"] -->|"every hour, paginated"| Refresh["Rank owners, choose vaults to follow"]
     Refresh --> Followed["Followed vaults per asset"]
     Followed --> Minute["Every minute: collateral-weighted ratio"]
